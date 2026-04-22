@@ -1,0 +1,4 @@
+build/
+.fpm/
+.docs/
+docs/
