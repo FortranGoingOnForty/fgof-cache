@@ -74,10 +74,8 @@ contains
     type(cache_entry) :: entry
 
     entry%present = .false.
-    entry%metadata_available = .false.
     entry%error_code = FGOF_CACHE_OK
-    entry%size_bytes = 0_int64
-    entry%modified_time_seconds = 0_int64
+    call clear_entry_metadata(entry)
     entry%key = ""
     entry%root_path = ""
     entry%relative_path = ""
@@ -314,6 +312,7 @@ contains
     end if
 
     entry%present = .false.
+    call clear_entry_metadata(entry)
     entry%error_code = FGOF_CACHE_OK
     entry%error_message = ""
   end function remove_cache_entry
@@ -580,9 +579,7 @@ contains
     type(cache_entry), intent(inout) :: entry
     integer :: sys_errno
 
-    entry%metadata_available = .false.
-    entry%size_bytes = 0_int64
-    entry%modified_time_seconds = 0_int64
+    call clear_entry_metadata(entry)
 
     success = stat_path_posix(entry%path, entry%size_bytes, entry%modified_time_seconds, sys_errno)
     if (.not. success) then
@@ -693,12 +690,18 @@ contains
     character(len=*), intent(in) :: message
 
     entry%present = .false.
-    entry%metadata_available = .false.
-    entry%size_bytes = 0_int64
-    entry%modified_time_seconds = 0_int64
+    call clear_entry_metadata(entry)
     entry%error_code = code
     entry%error_message = message
   end subroutine set_entry_error
+
+  subroutine clear_entry_metadata(entry)
+    type(cache_entry), intent(inout) :: entry
+
+    entry%metadata_available = .false.
+    entry%size_bytes = 0_int64
+    entry%modified_time_seconds = 0_int64
+  end subroutine clear_entry_metadata
 
   subroutine set_prune_error(result_value, code, message)
     type(cache_prune_result), intent(inout) :: result_value
