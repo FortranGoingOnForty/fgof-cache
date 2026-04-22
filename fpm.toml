@@ -9,7 +9,7 @@ description = "Disk cache helpers for modern Fortran"
 [build]
 auto-executables = false
 auto-tests = true
-auto-examples = false
+auto-examples = true
 
 [install]
 library = true
