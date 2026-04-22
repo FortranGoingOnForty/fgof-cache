@@ -24,7 +24,7 @@ Future scope:
 
 ## Status
 
-Sprint 03 is in place.
+Sprint 04 is in place.
 
 Tracked today:
 
@@ -35,9 +35,10 @@ Tracked today:
 - entry resolution helpers that expose root, relative path, presence state, and file metadata
 - deterministic stale checks with optional explicit reference times
 - namespace-aware stale-entry pruning helpers
+- tracked round-trip and prune examples
 - `fgof-temp`-backed write-through safety for cache writes
 - focused coverage in `fpm test`
-- CI on macOS and Ubuntu
+- CI on macOS and Ubuntu, including direct example execution
 
 ## Why Use It
 
@@ -101,6 +102,7 @@ Current semantics:
 - `read_cache_text()` reads exact stored Fortran character payloads back out of cache entries
 - `read_cache_text()` and `remove_cache_entry()` do not create missing cache roots as a side effect
 - `remove_cache_entry()` removes stored cache files by key while leaving the cache root in place
+- successful removals clear cached metadata on the returned entry
 - `prune_stale_cache()` prunes only the resolved namespace root, treats missing roots as a no-op, and removes emptied shard directories as it goes
 
 ## Build And Test
@@ -110,6 +112,11 @@ fpm test
 ```
 
 That is the baseline verification command locally and in CI.
+
+Tracked examples:
+
+- [cache_roundtrip_demo.f90](example/cache_roundtrip_demo.f90)
+- [cache_prune_demo.f90](example/cache_prune_demo.f90)
 
 ## Supported Platforms
 
