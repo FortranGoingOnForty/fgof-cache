@@ -4,7 +4,7 @@ module fgof_cache
     current_time_seconds_posix, &
     directory_exists_posix, &
     ensure_directory_posix, &
-    path_exists_posix, &
+    path_probe_posix, &
     prune_stale_posix, &
     remove_file_posix, &
     stat_path_posix
@@ -201,32 +201,9 @@ contains
     character(len=*), intent(in) :: key
     type(cache_options), intent(in), optional :: options
     type(cache_entry) :: entry
-    type(cache_root) :: root
 
-    entry = clear_cache_entry()
-    entry%key = key
-
-    if (len(key) == 0) then
-      call set_entry_error(entry, FGOF_CACHE_ERR_INVALID_OPTIONS, "cache key must not be empty")
-      return
-    end if
-
-    root = ensure_cache_root(options)
-    if (.not. root%ready) then
-      entry%root_path = root%path
-      call set_entry_error(entry, root%error_code, root%error_message)
-      return
-    end if
-
-    entry%root_path = root%path
-    entry%relative_path = cache_relative_path_for_key(key)
-    entry%path = cache_path_for_key(root%path, key)
-    entry%present = path_exists_posix(entry%path)
-    if (entry%present) then
-      if (.not. populate_entry_metadata(entry)) return
-    end if
-    entry%error_code = FGOF_CACHE_OK
-    entry%error_message = ""
+    if (.not. prepare_entry(key, options, create_root_requested(options, .true.), entry)) return
+    if (.not. inspect_entry(entry, .true.)) return
   end function resolve_cache_entry
 
   function write_cache_text(key, text, options) result(entry)
@@ -239,8 +216,8 @@ contains
     logical :: success
     type(write_result) :: write_outcome
 
-    entry = resolve_cache_entry(key, options)
-    if (entry%error_code /= FGOF_CACHE_OK) return
+    if (.not. prepare_entry(key, options, .true., entry)) return
+    if (.not. inspect_entry(entry, .false.)) return
 
     parent_path = parent_directory(entry%path)
     success = ensure_directory_posix(parent_path, sys_errno)
@@ -256,7 +233,7 @@ contains
     end if
 
     entry%present = .true.
-    if (.not. populate_entry_metadata(entry)) return
+    call refresh_entry_metadata(entry)
     entry%error_code = FGOF_CACHE_OK
     entry%error_message = ""
   end function write_cache_text
@@ -297,8 +274,8 @@ contains
     integer :: sys_errno
     logical :: success
 
-    entry = resolve_read_entry(key, options)
-    if (entry%error_code /= FGOF_CACHE_OK) return
+    if (.not. prepare_entry(key, options, .false., entry)) return
+    if (.not. inspect_entry(entry, .false.)) return
 
     if (.not. entry%present) then
       call set_entry_error(entry, FGOF_CACHE_ERR_NOT_FOUND, "cache entry not found")
@@ -355,6 +332,7 @@ contains
     end if
 
     local_options = merged_options(options)
+    if (.not. validate_prune_options(local_options, result_value)) return
     local_options%create_root = .false.
     root = ensure_cache_root(local_options)
     result_value%root_path = root%path
@@ -424,6 +402,41 @@ contains
     entry = resolve_cache_entry(key, local_options)
   end function resolve_read_entry
 
+  logical function prepare_entry(key, options, create_root, entry) result(success)
+    character(len=*), intent(in) :: key
+    type(cache_options), intent(in), optional :: options
+    logical, intent(in) :: create_root
+    type(cache_entry), intent(out) :: entry
+    type(cache_options) :: local_options
+    type(cache_root) :: root
+
+    entry = clear_cache_entry()
+    entry%key = key
+
+    if (len(key) == 0) then
+      call set_entry_error(entry, FGOF_CACHE_ERR_INVALID_OPTIONS, "cache key must not be empty")
+      success = .false.
+      return
+    end if
+
+    local_options = merged_options(options)
+    local_options%create_root = create_root
+    root = ensure_cache_root(local_options)
+    if (.not. root%ready) then
+      entry%root_path = root%path
+      call set_entry_error(entry, root%error_code, root%error_message)
+      success = .false.
+      return
+    end if
+
+    entry%root_path = root%path
+    entry%relative_path = cache_relative_path_for_key(key)
+    entry%path = cache_path_for_key(root%path, key)
+    entry%error_code = FGOF_CACHE_OK
+    entry%error_message = ""
+    success = .true.
+  end function prepare_entry
+
   function merged_options(options) result(local_options)
     type(cache_options), intent(in), optional :: options
     type(cache_options) :: local_options
@@ -431,6 +444,14 @@ contains
     local_options = clear_cache_options()
     if (present(options)) local_options = options
   end function merged_options
+
+  logical function create_root_requested(options, default_value) result(create_root)
+    type(cache_options), intent(in), optional :: options
+    logical, intent(in) :: default_value
+
+    create_root = default_value
+    if (present(options)) create_root = options%create_root
+  end function create_root_requested
 
   logical function validate_options(options, root) result(valid)
     type(cache_options), intent(in) :: options
@@ -462,6 +483,21 @@ contains
 
     valid = .true.
   end function validate_options
+
+  logical function validate_prune_options(options, result_value) result(valid)
+    type(cache_options), intent(in) :: options
+    type(cache_prune_result), intent(inout) :: result_value
+
+    valid = .false.
+
+    if (allocated(options%root_dir) .and. len(options%root_dir) > 0 .and. .not. allocated(options%namespace)) then
+      call set_prune_error(result_value, FGOF_CACHE_ERR_INVALID_OPTIONS, &
+                           "namespace is required when pruning an explicit root_dir")
+      return
+    end if
+
+    valid = .true.
+  end function validate_prune_options
 
   logical function resolved_root_path(options, root_path) result(valid)
     type(cache_options), intent(in) :: options
@@ -589,6 +625,59 @@ contains
 
     entry%metadata_available = .true.
   end function populate_entry_metadata
+
+  subroutine refresh_entry_metadata(entry)
+    type(cache_entry), intent(inout) :: entry
+
+    if (.not. populate_entry_metadata(entry)) then
+      entry%present = .true.
+      entry%error_code = FGOF_CACHE_OK
+      entry%error_message = ""
+    end if
+  end subroutine refresh_entry_metadata
+
+  logical function inspect_entry(entry, strict_probe) result(success)
+    type(cache_entry), intent(inout) :: entry
+    logical, intent(in) :: strict_probe
+    logical :: exists
+    logical :: regular_file
+    integer :: sys_errno
+
+    entry%present = .false.
+    call clear_entry_metadata(entry)
+
+    success = path_probe_posix(entry%path, exists, regular_file, entry%size_bytes, &
+                               entry%modified_time_seconds, sys_errno)
+    if (.not. success) then
+      if (strict_probe) then
+        call set_entry_error(entry, FGOF_CACHE_ERR_IO, errno_message("cache entry probe failed", sys_errno))
+      else
+        entry%error_code = FGOF_CACHE_OK
+        entry%error_message = ""
+        success = .true.
+      end if
+      return
+    end if
+
+    if (.not. exists) then
+      entry%error_code = FGOF_CACHE_OK
+      entry%error_message = ""
+      success = .true.
+      return
+    end if
+
+    if (.not. regular_file) then
+      call set_entry_error(entry, FGOF_CACHE_ERR_IO, "cache entry path exists but is not a regular file")
+      success = .false.
+      return
+    end if
+
+    entry%present = .true.
+    entry%metadata_available = .true.
+    entry%error_code = FGOF_CACHE_OK
+    entry%error_message = ""
+    success = .true.
+  end function inspect_entry
 
   integer(int64) function effective_reference_time(reference_time_seconds) result(now_seconds)
     integer(int64), intent(in), optional :: reference_time_seconds

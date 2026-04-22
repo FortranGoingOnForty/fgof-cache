@@ -8,6 +8,7 @@ module fgof_cache_posix
     current_time_seconds_posix, &
     directory_exists_posix, &
     ensure_directory_posix, &
+    path_probe_posix, &
     path_exists_posix, &
     prune_stale_posix, &
     remove_file_posix, &
@@ -36,10 +37,11 @@ module fgof_cache_posix
       integer(c_int), intent(out) :: error_code
     end function fgof_cache_remove_file
 
-    integer(c_int) function fgof_cache_stat_path(path, size_bytes, modified_time_seconds, error_code) &
+    integer(c_int) function fgof_cache_stat_path(path, regular_file, size_bytes, modified_time_seconds, error_code) &
       bind(c, name="fgof_cache_stat_path")
       import :: c_char, c_int, c_long_long
       character(kind=c_char), intent(in) :: path(*)
+      integer(c_int), intent(out) :: regular_file
       integer(c_long_long), intent(out) :: size_bytes
       integer(c_long_long), intent(out) :: modified_time_seconds
       integer(c_int), intent(out) :: error_code
@@ -128,6 +130,7 @@ contains
     integer(int64), intent(out) :: modified_time_seconds
     integer, intent(out) :: error_code
     character(kind=c_char), allocatable :: c_path(:)
+    integer(c_int) :: c_regular_file
     integer(c_long_long) :: c_size_bytes
     integer(c_long_long) :: c_modified_time_seconds
     integer(c_int) :: c_error
@@ -142,11 +145,56 @@ contains
     end if
 
     c_path = to_c_string(path)
-    success = (fgof_cache_stat_path(c_path, c_size_bytes, c_modified_time_seconds, c_error) /= 0_c_int)
+    success = (fgof_cache_stat_path(c_path, c_regular_file, c_size_bytes, c_modified_time_seconds, c_error) /= 0_c_int)
     size_bytes = int(c_size_bytes, int64)
     modified_time_seconds = int(c_modified_time_seconds, int64)
     error_code = c_error
   end function stat_path_posix
+
+  logical function path_probe_posix(path, exists, regular_file, size_bytes, modified_time_seconds, error_code) result(success)
+    character(len=*), intent(in) :: path
+    logical, intent(out) :: exists
+    logical, intent(out) :: regular_file
+    integer(int64), intent(out) :: size_bytes
+    integer(int64), intent(out) :: modified_time_seconds
+    integer, intent(out) :: error_code
+    character(kind=c_char), allocatable :: c_path(:)
+    integer(c_int) :: c_regular_file
+    integer(c_long_long) :: c_size_bytes
+    integer(c_long_long) :: c_modified_time_seconds
+    integer(c_int) :: c_error
+
+    exists = .false.
+    regular_file = .false.
+    size_bytes = 0_int64
+    modified_time_seconds = 0_int64
+
+    if (len(path) == 0) then
+      error_code = 22
+      success = .false.
+      return
+    end if
+
+    c_path = to_c_string(path)
+    if (fgof_cache_stat_path(c_path, c_regular_file, c_size_bytes, c_modified_time_seconds, c_error) /= 0_c_int) then
+      exists = .true.
+      regular_file = (c_regular_file /= 0_c_int)
+      size_bytes = int(c_size_bytes, int64)
+      modified_time_seconds = int(c_modified_time_seconds, int64)
+      error_code = 0
+      success = .true.
+      return
+    end if
+
+    if (c_error == 2_c_int) then
+      error_code = 0
+      success = .true.
+      return
+    end if
+
+    error_code = c_error
+    success = .false.
+  end function path_probe_posix
 
   logical function prune_stale_posix(path, cutoff_seconds, scanned_count, removed_count, error_code) result(success)
     character(len=*), intent(in) :: path

@@ -44,11 +44,15 @@ int fgof_cache_remove_file(const char *path, int *error_code) {
     return 1;
 }
 
-int fgof_cache_stat_path(const char *path, long long *size_bytes, long long *modified_time_seconds, int *error_code) {
+int fgof_cache_stat_path(const char *path, int *regular_file,
+                         long long *size_bytes, long long *modified_time_seconds, int *error_code) {
     struct stat st;
 
     if (error_code != NULL) {
         *error_code = 0;
+    }
+    if (regular_file != NULL) {
+        *regular_file = 0;
     }
     if (size_bytes != NULL) {
         *size_bytes = 0;
@@ -76,6 +80,9 @@ int fgof_cache_stat_path(const char *path, long long *size_bytes, long long *mod
     }
     if (modified_time_seconds != NULL) {
         *modified_time_seconds = (long long)st.st_mtime;
+    }
+    if (regular_file != NULL) {
+        *regular_file = S_ISREG(st.st_mode) ? 1 : 0;
     }
 
     return 1;
