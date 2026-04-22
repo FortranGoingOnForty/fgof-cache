@@ -14,10 +14,19 @@ module fgof_cache_types
     character(len=:), allocatable :: namespace
   end type cache_options
 
+  type, public :: cache_root
+    logical :: ready = .false.
+    integer :: error_code = FGOF_CACHE_OK
+    character(len=:), allocatable :: path
+    character(len=:), allocatable :: error_message
+  end type cache_root
+
   type, public :: cache_entry
     logical :: present = .false.
     integer :: error_code = FGOF_CACHE_OK
     character(len=:), allocatable :: key
+    character(len=:), allocatable :: root_path
+    character(len=:), allocatable :: relative_path
     character(len=:), allocatable :: path
     character(len=:), allocatable :: error_message
   end type cache_entry
