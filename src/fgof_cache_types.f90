@@ -1,4 +1,5 @@
 module fgof_cache_types
+  use iso_fortran_env, only : int64
   implicit none
   private
 
@@ -23,7 +24,10 @@ module fgof_cache_types
 
   type, public :: cache_entry
     logical :: present = .false.
+    logical :: metadata_available = .false.
     integer :: error_code = FGOF_CACHE_OK
+    integer(int64) :: size_bytes = 0_int64
+    integer(int64) :: modified_time_seconds = 0_int64
     character(len=:), allocatable :: key
     character(len=:), allocatable :: root_path
     character(len=:), allocatable :: relative_path
@@ -38,5 +42,14 @@ module fgof_cache_types
     character(len=:), allocatable :: text
     character(len=:), allocatable :: error_message
   end type cache_text_result
+
+  type, public :: cache_prune_result
+    logical :: completed = .false.
+    integer :: error_code = FGOF_CACHE_OK
+    integer(int64) :: scanned_count = 0_int64
+    integer(int64) :: removed_count = 0_int64
+    character(len=:), allocatable :: root_path
+    character(len=:), allocatable :: error_message
+  end type cache_prune_result
 
 end module fgof_cache_types

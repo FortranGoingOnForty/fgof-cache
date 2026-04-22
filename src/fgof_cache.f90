@@ -1,5 +1,13 @@
 module fgof_cache
-  use fgof_cache_posix, only : directory_exists_posix, ensure_directory_posix, path_exists_posix, remove_file_posix
+  use iso_fortran_env, only : int64
+  use fgof_cache_posix, only : &
+    current_time_seconds_posix, &
+    directory_exists_posix, &
+    ensure_directory_posix, &
+    path_exists_posix, &
+    prune_stale_posix, &
+    remove_file_posix, &
+    stat_path_posix
   use fgof_temp, only : atomic_write
   use fgof_temp_types, only : write_result
   use fgof_cache_types, only : &
@@ -9,6 +17,7 @@ module fgof_cache
     FGOF_CACHE_ERR_NOT_FOUND, &
     FGOF_CACHE_OK, &
     cache_entry, &
+    cache_prune_result, &
     cache_root, &
     cache_text_result, &
     cache_options
@@ -23,8 +32,10 @@ module fgof_cache
     FGOF_CACHE_OK, &
     cache_backend_name, &
     cache_entry, &
+    cache_entry_is_stale, &
     cache_key_token, &
     cache_path_for_key, &
+    cache_prune_result, &
     cache_relative_path_for_key, &
     cache_root, &
     cache_text_result, &
@@ -32,9 +43,11 @@ module fgof_cache
     cache_options, &
     clear_cache_root, &
     clear_cache_entry, &
+    clear_cache_prune_result, &
     clear_cache_text_result, &
     clear_cache_options, &
     ensure_cache_root, &
+    prune_stale_cache, &
     read_cache_text, &
     remove_cache_entry, &
     write_cache_text, &
@@ -61,7 +74,10 @@ contains
     type(cache_entry) :: entry
 
     entry%present = .false.
+    entry%metadata_available = .false.
     entry%error_code = FGOF_CACHE_OK
+    entry%size_bytes = 0_int64
+    entry%modified_time_seconds = 0_int64
     entry%key = ""
     entry%root_path = ""
     entry%relative_path = ""
@@ -78,6 +94,17 @@ contains
     result_value%text = ""
     result_value%error_message = ""
   end function clear_cache_text_result
+
+  function clear_cache_prune_result() result(result_value)
+    type(cache_prune_result) :: result_value
+
+    result_value%completed = .false.
+    result_value%error_code = FGOF_CACHE_OK
+    result_value%scanned_count = 0_int64
+    result_value%removed_count = 0_int64
+    result_value%root_path = ""
+    result_value%error_message = ""
+  end function clear_cache_prune_result
 
   function ensure_cache_root(options) result(root)
     type(cache_options), intent(in), optional :: options
@@ -197,6 +224,9 @@ contains
     entry%relative_path = cache_relative_path_for_key(key)
     entry%path = cache_path_for_key(root%path, key)
     entry%present = path_exists_posix(entry%path)
+    if (entry%present) then
+      if (.not. populate_entry_metadata(entry)) return
+    end if
     entry%error_code = FGOF_CACHE_OK
     entry%error_message = ""
   end function resolve_cache_entry
@@ -228,6 +258,7 @@ contains
     end if
 
     entry%present = .true.
+    if (.not. populate_entry_metadata(entry)) return
     entry%error_code = FGOF_CACHE_OK
     entry%error_message = ""
   end function write_cache_text
@@ -286,6 +317,76 @@ contains
     entry%error_code = FGOF_CACHE_OK
     entry%error_message = ""
   end function remove_cache_entry
+
+  logical function cache_entry_is_stale(entry, max_age_seconds, reference_time_seconds) result(stale)
+    type(cache_entry), intent(in) :: entry
+    integer(int64), intent(in) :: max_age_seconds
+    integer(int64), intent(in), optional :: reference_time_seconds
+    integer(int64) :: now_seconds
+
+    stale = .false.
+
+    if (.not. entry%present) return
+    if (.not. entry%metadata_available) return
+    if (max_age_seconds < 0_int64) return
+
+    now_seconds = effective_reference_time(reference_time_seconds)
+    if (now_seconds < 0_int64) return
+
+    stale = stale_from_times(entry%modified_time_seconds, max_age_seconds, now_seconds)
+  end function cache_entry_is_stale
+
+  function prune_stale_cache(max_age_seconds, options, reference_time_seconds) result(result_value)
+    integer(int64), intent(in) :: max_age_seconds
+    type(cache_options), intent(in), optional :: options
+    integer(int64), intent(in), optional :: reference_time_seconds
+    type(cache_prune_result) :: result_value
+    type(cache_options) :: local_options
+    type(cache_root) :: root
+    integer(int64) :: cutoff_seconds
+    integer(int64) :: now_seconds
+    integer :: sys_errno
+    logical :: success
+
+    result_value = clear_cache_prune_result()
+
+    if (max_age_seconds < 0_int64) then
+      call set_prune_error(result_value, FGOF_CACHE_ERR_INVALID_OPTIONS, "max_age_seconds must not be negative")
+      return
+    end if
+
+    local_options = merged_options(options)
+    local_options%create_root = .false.
+    root = ensure_cache_root(local_options)
+    result_value%root_path = root%path
+
+    if (root%error_code == FGOF_CACHE_ERR_NOT_FOUND) then
+      result_value%completed = .true.
+      return
+    end if
+    if (.not. root%ready) then
+      call set_prune_error(result_value, root%error_code, root%error_message)
+      return
+    end if
+
+    now_seconds = effective_reference_time(reference_time_seconds)
+    if (now_seconds < 0_int64) then
+      call set_prune_error(result_value, FGOF_CACHE_ERR_INTERNAL, "unable to resolve current time")
+      return
+    end if
+
+    cutoff_seconds = stale_cutoff(max_age_seconds, now_seconds)
+    success = prune_stale_posix(root%path, cutoff_seconds, result_value%scanned_count, &
+                                result_value%removed_count, sys_errno)
+    if (.not. success) then
+      call set_prune_error(result_value, FGOF_CACHE_ERR_IO, errno_message("cache prune failed", sys_errno))
+      return
+    end if
+
+    result_value%completed = .true.
+    result_value%error_code = FGOF_CACHE_OK
+    result_value%error_message = ""
+  end function prune_stale_cache
 
   function cache_backend_name() result(name)
     character(len=:), allocatable :: name
@@ -475,6 +576,52 @@ contains
     end if
   end function parent_directory
 
+  logical function populate_entry_metadata(entry) result(success)
+    type(cache_entry), intent(inout) :: entry
+    integer :: sys_errno
+
+    entry%metadata_available = .false.
+    entry%size_bytes = 0_int64
+    entry%modified_time_seconds = 0_int64
+
+    success = stat_path_posix(entry%path, entry%size_bytes, entry%modified_time_seconds, sys_errno)
+    if (.not. success) then
+      call set_entry_error(entry, FGOF_CACHE_ERR_IO, errno_message("cache entry metadata read failed", sys_errno))
+      return
+    end if
+
+    entry%metadata_available = .true.
+  end function populate_entry_metadata
+
+  integer(int64) function effective_reference_time(reference_time_seconds) result(now_seconds)
+    integer(int64), intent(in), optional :: reference_time_seconds
+
+    if (present(reference_time_seconds)) then
+      now_seconds = reference_time_seconds
+    else
+      now_seconds = current_time_seconds_posix()
+    end if
+  end function effective_reference_time
+
+  integer(int64) function stale_cutoff(max_age_seconds, now_seconds) result(cutoff_seconds)
+    integer(int64), intent(in) :: max_age_seconds
+    integer(int64), intent(in) :: now_seconds
+
+    if (now_seconds < max_age_seconds) then
+      cutoff_seconds = -1_int64
+    else
+      cutoff_seconds = now_seconds - max_age_seconds
+    end if
+  end function stale_cutoff
+
+  logical function stale_from_times(modified_time_seconds, max_age_seconds, now_seconds) result(stale)
+    integer(int64), intent(in) :: modified_time_seconds
+    integer(int64), intent(in) :: max_age_seconds
+    integer(int64), intent(in) :: now_seconds
+
+    stale = (modified_time_seconds <= stale_cutoff(max_age_seconds, now_seconds))
+  end function stale_from_times
+
   subroutine read_text_file(path, text, error_code, error_message)
     character(len=*), intent(in) :: path
     character(len=:), allocatable, intent(out) :: text
@@ -546,9 +693,22 @@ contains
     character(len=*), intent(in) :: message
 
     entry%present = .false.
+    entry%metadata_available = .false.
+    entry%size_bytes = 0_int64
+    entry%modified_time_seconds = 0_int64
     entry%error_code = code
     entry%error_message = message
   end subroutine set_entry_error
+
+  subroutine set_prune_error(result_value, code, message)
+    type(cache_prune_result), intent(inout) :: result_value
+    integer, intent(in) :: code
+    character(len=*), intent(in) :: message
+
+    result_value%completed = .false.
+    result_value%error_code = code
+    result_value%error_message = message
+  end subroutine set_prune_error
 
   function io_status_message(prefix, status_code, iomsg) result(message)
     character(len=*), intent(in) :: prefix
