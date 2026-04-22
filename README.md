@@ -24,14 +24,16 @@ Future scope:
 
 ## Status
 
-Sprint 01 is in place.
+Sprint 02 is in place.
 
 Tracked today:
 
 - explicit cache root resolution with namespace support
 - on-demand cache root initialization on POSIX backends
 - deterministic key token and key-to-path helpers
+- text-focused cache entry write, read, and remove helpers
 - entry resolution helpers that expose root, relative path, and presence state
+- `fgof-temp`-backed write-through safety for cache writes
 - focused coverage in `fpm test`
 - CI on macOS and Ubuntu
 
@@ -53,6 +55,7 @@ Public types:
 - `cache_options`
 - `cache_root`
 - `cache_entry`
+- `cache_text_result`
 
 Public constants:
 
@@ -72,6 +75,10 @@ Current public procedures:
 - `cache_relative_path_for_key`
 - `cache_path_for_key`
 - `resolve_cache_entry`
+- `clear_cache_text_result`
+- `write_cache_text`
+- `read_cache_text`
+- `remove_cache_entry`
 - `cache_backend_name`
 - `cache_error_name`
 
@@ -83,6 +90,10 @@ Current semantics:
 - `cache_key_token()` maps the exact Fortran character payload to a lowercase hex token
 - `cache_relative_path_for_key()` shards tokens into a stable `aa/bb/fulltoken` layout
 - `resolve_cache_entry()` gives callers the resolved root path, relative path, full path, and current presence state without forcing cache entry I/O yet
+- `write_cache_text()` creates sharded parent directories as needed and writes through `fgof-temp` atomic replacement
+- `read_cache_text()` reads exact stored Fortran character payloads back out of cache entries
+- `read_cache_text()` and `remove_cache_entry()` do not create missing cache roots as a side effect
+- `remove_cache_entry()` removes stored cache files by key while leaving the cache root in place
 
 ## Build And Test
 
