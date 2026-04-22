@@ -9,13 +9,15 @@ program test_scaffold
     cache_error_name, &
     clear_cache_root, &
     clear_cache_entry, &
+    clear_cache_text_result, &
     clear_cache_options
-  use fgof_cache_types, only : cache_entry, cache_options, cache_root
+  use fgof_cache_types, only : cache_entry, cache_options, cache_root, cache_text_result
   implicit none
 
   type(cache_options) :: options
   type(cache_root) :: root
   type(cache_entry) :: entry
+  type(cache_text_result) :: text_result
 
   options = clear_cache_options()
   if (.not. options%create_root) error stop "cache options should create roots by default"
@@ -36,6 +38,13 @@ program test_scaffold
   if (entry%relative_path /= "") error stop "cache entry should start with an empty relative path"
   if (entry%path /= "") error stop "cache entry should start with an empty path"
   if (entry%error_message /= "") error stop "cache entry should start with an empty message"
+
+  text_result = clear_cache_text_result()
+  if (text_result%found) error stop "cache text result should start not found"
+  if (text_result%error_code /= FGOF_CACHE_OK) error stop "cache text result should start ok"
+  if (text_result%entry%error_code /= FGOF_CACHE_OK) error stop "cache text result should carry a cleared entry by default"
+  if (text_result%text /= "") error stop "cache text result should start with empty text"
+  if (text_result%error_message /= "") error stop "cache text result should start with an empty message"
 
   if (cache_backend_name() /= "posix") error stop "backend helper should describe the current backend"
   if (cache_error_name(FGOF_CACHE_OK) /= "ok") error stop "error helper should map ok"

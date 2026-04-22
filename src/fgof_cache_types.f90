@@ -31,4 +31,12 @@ module fgof_cache_types
     character(len=:), allocatable :: error_message
   end type cache_entry
 
+  type, public :: cache_text_result
+    logical :: found = .false.
+    integer :: error_code = FGOF_CACHE_OK
+    type(cache_entry) :: entry
+    character(len=:), allocatable :: text
+    character(len=:), allocatable :: error_message
+  end type cache_text_result
+
 end module fgof_cache_types
