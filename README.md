@@ -103,7 +103,8 @@ Current semantics:
 - `read_cache_text()` and `remove_cache_entry()` do not create missing cache roots as a side effect
 - `remove_cache_entry()` removes stored cache files by key while leaving the cache root in place
 - successful removals clear cached metadata on the returned entry
-- `prune_stale_cache()` prunes only the resolved namespace root, treats missing roots as a no-op, and removes emptied shard directories as it goes
+- non-file entry paths are rejected instead of being treated as normal cache files
+- `prune_stale_cache()` prunes only the resolved namespace root, requires `namespace` when pruning an explicit `root_dir`, treats missing roots as a no-op, and removes emptied shard directories as it goes
 
 ## Build And Test
 
