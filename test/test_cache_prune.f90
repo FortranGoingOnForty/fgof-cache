@@ -1,6 +1,7 @@
 program test_cache_prune
   use iso_fortran_env, only : int64
   use fgof_cache, only : &
+    FGOF_CACHE_ERR_INVALID_OPTIONS, &
     FGOF_CACHE_ERR_NOT_FOUND, &
     FGOF_CACHE_OK, &
     clear_cache_options, &
@@ -52,6 +53,10 @@ program test_cache_prune
   read_result = read_cache_text("gamma", keep_options)
   if (read_result%error_code /= FGOF_CACHE_OK) error stop "pruning one namespace should not disturb another namespace"
   if (read_result%text /= "keep-me") error stop "control namespace entries should remain intact after prune"
+
+  prune_result = prune_stale_cache(-1_int64, prune_options, entry%modified_time_seconds + 120_int64)
+  if (prune_result%completed) error stop "negative max_age_seconds should not report a completed prune"
+  if (prune_result%error_code /= FGOF_CACHE_ERR_INVALID_OPTIONS) error stop "negative max_age_seconds should report invalid options"
 
   missing_options = clear_cache_options()
   missing_options%root_dir = unique_root("missing")

@@ -32,6 +32,9 @@ program test_cache_io
   entry = remove_cache_entry("alpha", options)
   if (entry%error_code /= FGOF_CACHE_OK) error stop "remove_cache_entry should succeed for stored entries"
   if (entry%present) error stop "remove_cache_entry should clear presence on success"
+  if (entry%metadata_available) error stop "remove_cache_entry should clear stale metadata after a successful remove"
+  if (entry%size_bytes /= 0) error stop "remove_cache_entry should zero size metadata after a successful remove"
+  if (entry%modified_time_seconds /= 0) error stop "remove_cache_entry should zero modified-time metadata after a successful remove"
 
   read_result = read_cache_text("alpha", options)
   if (read_result%error_code /= FGOF_CACHE_ERR_NOT_FOUND) error stop "removed entries should report not-found on later reads"
