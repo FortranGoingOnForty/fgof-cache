@@ -1,12 +1,15 @@
 program test_cache_io_edges
   use fgof_cache, only : &
+    FGOF_CACHE_ERR_IO, &
     FGOF_CACHE_ERR_INVALID_OPTIONS, &
     FGOF_CACHE_ERR_NOT_FOUND, &
     clear_cache_options, &
     read_cache_text, &
+    resolve_cache_entry, &
     remove_cache_entry, &
     write_cache_text
   use fgof_cache_types, only : cache_entry, cache_options, cache_text_result
+  use fgof_cache_posix, only : ensure_directory_posix
   implicit none
 
   type(cache_options) :: options
@@ -14,6 +17,8 @@ program test_cache_io_edges
   type(cache_text_result) :: read_result
   character(len=:), allocatable :: root_path
   logical :: exists
+  integer :: sys_errno
+  logical :: success
 
   root_path = unique_root("edges")
   options = clear_cache_options()
@@ -38,6 +43,20 @@ program test_cache_io_edges
   read_result = read_cache_text("a ", options)
   if (read_result%error_code /= 0) error stop "read_cache_text should read entries with trailing-space keys"
   if (read_result%text /= "trail ") error stop "cache entry text should preserve trailing spaces"
+
+  entry = resolve_cache_entry("dirkey", options)
+  if (entry%error_code /= 0) error stop "resolve_cache_entry should succeed before non-file path tests"
+  success = ensure_directory_posix(entry%path, sys_errno)
+  if (.not. success) error stop "non-file path setup should be able to create a directory at the cache entry path"
+
+  read_result = read_cache_text("dirkey", options)
+  if (read_result%error_code /= FGOF_CACHE_ERR_IO) error stop "read_cache_text should reject non-file cache entry paths"
+
+  entry = remove_cache_entry("dirkey", options)
+  if (entry%error_code /= FGOF_CACHE_ERR_IO) error stop "remove_cache_entry should reject non-file cache entry paths"
+
+  entry = write_cache_text("dirkey", "hello", options)
+  if (entry%error_code /= FGOF_CACHE_ERR_IO) error stop "write_cache_text should reject non-file cache entry paths"
 
 contains
 

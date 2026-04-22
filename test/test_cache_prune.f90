@@ -14,6 +14,7 @@ program test_cache_prune
   type(cache_options) :: keep_options
   type(cache_options) :: prune_options
   type(cache_options) :: missing_options
+  type(cache_options) :: unsafe_options
   type(cache_entry) :: entry
   type(cache_prune_result) :: prune_result
   type(cache_text_result) :: read_result
@@ -57,6 +58,12 @@ program test_cache_prune
   prune_result = prune_stale_cache(-1_int64, prune_options, entry%modified_time_seconds + 120_int64)
   if (prune_result%completed) error stop "negative max_age_seconds should not report a completed prune"
   if (prune_result%error_code /= FGOF_CACHE_ERR_INVALID_OPTIONS) error stop "negative max_age_seconds should report invalid options"
+
+  unsafe_options = clear_cache_options()
+  unsafe_options%root_dir = root_path
+  prune_result = prune_stale_cache(60_int64, unsafe_options, entry%modified_time_seconds + 120_int64)
+  if (prune_result%completed) error stop "prune_stale_cache should reject explicit unnamespaced root_dir pruning"
+  if (prune_result%error_code /= FGOF_CACHE_ERR_INVALID_OPTIONS) error stop "explicit unnamespaced root_dir pruning should report invalid options"
 
   missing_options = clear_cache_options()
   missing_options%root_dir = unique_root("missing")
