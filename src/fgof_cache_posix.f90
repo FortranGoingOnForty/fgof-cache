@@ -73,6 +73,7 @@ contains
       return
     end if
 
+    allocate(c_path(0))
     c_path = to_c_string(path)
     exists = (fgof_cache_path_exists(c_path) /= 0_c_int)
   end function path_exists_posix
@@ -86,6 +87,7 @@ contains
       return
     end if
 
+    allocate(c_path(0))
     c_path = to_c_string(path)
     exists = (fgof_cache_directory_exists(c_path) /= 0_c_int)
   end function directory_exists_posix
@@ -102,6 +104,7 @@ contains
       return
     end if
 
+    allocate(c_path(0))
     c_path = to_c_string(path)
     success = (fgof_cache_ensure_directory(c_path, c_error) /= 0_c_int)
     error_code = c_error
@@ -119,6 +122,7 @@ contains
       return
     end if
 
+    allocate(c_path(0))
     c_path = to_c_string(path)
     success = (fgof_cache_remove_file(c_path, c_error) /= 0_c_int)
     error_code = c_error
@@ -144,6 +148,7 @@ contains
       return
     end if
 
+    allocate(c_path(0))
     c_path = to_c_string(path)
     success = (fgof_cache_stat_path(c_path, c_regular_file, c_size_bytes, c_modified_time_seconds, c_error) /= 0_c_int)
     size_bytes = int(c_size_bytes, int64)
@@ -175,6 +180,7 @@ contains
       return
     end if
 
+    allocate(c_path(0))
     c_path = to_c_string(path)
     if (fgof_cache_stat_path(c_path, c_regular_file, c_size_bytes, c_modified_time_seconds, c_error) /= 0_c_int) then
       exists = .true.
@@ -216,6 +222,7 @@ contains
       return
     end if
 
+    allocate(c_path(0))
     c_path = to_c_string(path)
     success = (fgof_cache_prune_stale(c_path, int(cutoff_seconds, c_long_long), &
                                       c_scanned_count, c_removed_count, c_error) /= 0_c_int)
